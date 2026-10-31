@@ -1,0 +1,401 @@
+// Prisma Schema for Municipal Birth and Death Certificate Issuance and Digital Archive System
+// Configured with SQLite for local zero-dependency execution and fully compatible with MySQL syntax.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CITIZEN
+  HOSPITAL
+  OFFICER
+  ADMIN
+}
+
+enum ApplicationType {
+  BIRTH
+  DEATH
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  HOSPITAL_MATCHED
+  HOSPITAL_NOT_MATCHED
+  MANUAL_VERIFICATION
+  UNDER_REVIEW
+  DOCUMENTS_REQUESTED
+  RESUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum HospitalReportType {
+  BIRTH
+  DEATH
+}
+
+enum HospitalReportStatus {
+  SUBMITTED
+  VERIFIED
+  PENDING_CONFIRMATION
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  password     String
+  name         String
+  role         String         // CITIZEN, HOSPITAL, OFFICER, ADMIN
+  phone        String?
+  avatarUrl    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  citizenProfile Citizen?
+  hospitalProfile Hospital?
+  officerProfile  Officer?
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  statusHistories ApplicationStatusHistory[]
+
+  @@map("users")
+}
+
+model Citizen {
+  id                   String        @id @default(uuid())
+  userId               String        @unique
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nationalId           String?       // Aadhaar / SSN / National Identity Number
+  address              String?
+  dateOfBirth          DateTime?
+  gender               String?
+  relationToApplicant  String?       @default("SELF")
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  applications         Application[]
+
+  @@map("citizens")
+}
+
+model Hospital {
+  id             String            @id @default(uuid())
+  userId         String            @unique
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospitalCode   String            @unique
+  hospitalName   String
+  licenseNo      String
+  address        String
+  contactPerson  String
+  contactPhone   String
+  authorized     Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  reports        HospitalReport[]
+
+  @@map("hospitals")
+}
+
+model Officer {
+  id                        String                       @id @default(uuid())
+  userId                    String                       @unique
+  user                      User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  officerCode               String                       @unique
+  designation               String
+  department                String                       @default("Vital Statistics & Registrar of Municipal Corporation")
+  municipalityJurisdiction  String                       @default("Metropolitan Municipal Corporation Zone 1")
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+
+  assignedApplications      Application[]
+  verificationRecords       VerificationRecord[]
+  additionalDocRequests     AdditionalDocumentRequest[]
+
+  @@map("officers")
+}
+
+model HospitalReport {
+  id                     String    @id @default(uuid())
+  reportType             String    // BIRTH, DEATH
+  hospitalId             String
+  hospital               Hospital  @relation(fields: [hospitalId], references: [id])
+  hospitalRegistrationNo String    @unique
+  childOrDeceasedName    String
+  eventDate              DateTime
+  gender                 String
+  placeOfEvent           String
+  fatherName             String?
+  motherName             String?
+  spouseName             String?
+  causeOfDeath           String?
+  informantName          String?
+  doctorName             String?
+  medicalSummary         String?
+  documentUrl            String?
+  status                 String    @default("SUBMITTED") // SUBMITTED, VERIFIED, PENDING_CONFIRMATION
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  matchedApplications    Application[]
+
+  @@map("hospital_reports")
+}
+
+model Application {
+  id                      String                       @id @default(uuid())
+  applicationNumber       String                       @unique
+  applicationType         String                       // BIRTH, DEATH
+  citizenId               String
+  citizen                 Citizen                      @relation(fields: [citizenId], references: [id])
+  status                  String                       @default("SUBMITTED")
+  priority                String                       @default("NORMAL") // NORMAL, URGENT
+  assignedOfficerId       String?
+  assignedOfficer         Officer?                     @relation(fields: [assignedOfficerId], references: [id])
+  hospitalMatchedRecordId String?
+  hospitalMatchedRecord   HospitalReport?              @relation(fields: [hospitalMatchedRecordId], references: [id])
+  matchedDetails          String?                      // JSON string of matching results
+  submissionDate          DateTime                     @default(now())
+  approvedDate            DateTime?
+  rejectedDate            DateTime?
+  rejectionReason         String?
+  officerRemarks          String?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+
+  birthDetails            BirthDetail?
+  deathDetails            DeathDetail?
+  documents               Document[]
+  validationResults       ValidationResult[]
+  duplicateRecords        DuplicateRecord[]
+  verificationRecords     VerificationRecord[]
+  documentRequests        AdditionalDocumentRequest[]
+  certificate             Certificate?
+  statusHistory           ApplicationStatusHistory[]
+
+  @@map("applications")
+}
+
+model BirthDetail {
+  id                       String      @id @default(uuid())
+  applicationId            String      @unique
+  application              Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  childName                String
+  dateOfBirth              DateTime
+  timeOfBirth              String?
+  gender                   String
+  weightAtBirth            String?
+  placeOfBirth             String
+  hospitalName             String?
+  hospitalRegNo            String?
+  fatherName               String
+  fatherAadharOrNationalId String?
+  fatherOccupation         String?
+  fatherNationality        String      @default("Citizen")
+  motherName               String
+  motherAadharOrNationalId String?
+  motherOccupation         String?
+  motherNationality        String      @default("Citizen")
+  permanentAddress         String
+  presentAddressAtBirth    String
+
+  @@map("birth_details")
+}
+
+model DeathDetail {
+  id                 String      @id @default(uuid())
+  applicationId      String      @unique
+  application        Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  deceasedName       String
+  dateOfDeath        DateTime
+  timeOfDeath        String?
+  gender             String
+  age                String
+  placeOfDeath       String
+  hospitalName       String?
+  hospitalRegNo      String?
+  causeOfDeath       String
+  medicalAttendant   String?
+  fatherOrSpouseName String?
+  spouseName         String?
+  motherName         String?
+  informantName      String
+  informantRelation  String
+  permanentAddress   String
+
+  @@map("death_details")
+}
+
+model Document {
+  id            String       @id @default(uuid())
+  applicationId String
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  documentType  String       // HOSPITAL_DISCHARGE_CERTIFICATE, MEDICAL_CAUSE_OF_DEATH, PARENT_ID_PROOF, etc.
+  fileName      String
+  filePath      String
+  fileSize      Int
+  mimeType      String
+  uploadedAt    DateTime     @default(now())
+
+  ocrResult     OcrResult?
+
+  @@map("documents")
+}
+
+model OcrResult {
+  id               String    @id @default(uuid())
+  documentId       String    @unique
+  document         Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractedText    String
+  parsedFieldsJson String?   // JSON representation of detected fields
+  confidenceScore  Float     @default(0.0)
+  matchingStatus   String    @default("MATCHED") // MATCHED, PARTIAL_MISMATCH, FAILED
+  discrepancyNotes String?
+  processedAt      DateTime  @default(now())
+
+  @@map("ocr_results")
+}
+
+model ValidationResult {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  isValid         Boolean     @default(true)
+  checksJson      String      // JSON array of checks & statuses
+  validationScore Float       @default(100.0)
+  issuesSummary   String?
+  createdAt       DateTime    @default(now())
+
+  @@map("validation_results")
+}
+
+model DuplicateRecord {
+  id                 String      @id @default(uuid())
+  applicationId      String
+  application        Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  archiveRecordId    String?     // If matched to an existing archive record
+  similarityScore    Float       // 0 to 100
+  matchedFieldsJson  String      // fields matched
+  reviewDecision     String      @default("PENDING") // PENDING, CONFIRMED_DUPLICATE, CLEARED_AS_GENUINE
+  remarks            String?
+  detectedAt         DateTime    @default(now())
+
+  @@map("duplicate_records")
+}
+
+model VerificationRecord {
+  id               String      @id @default(uuid())
+  applicationId    String
+  application      Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  officerId        String?
+  officer          Officer?    @relation(fields: [officerId], references: [id])
+  verificationType String      // AUTOMATED_HOSPITAL, MANUAL_COMMUNITY, DOCUMENTARY, RESUBMISSION_REVIEW
+  remarks          String
+  outcome          String      // VERIFIED_OK, CONFLICT_DETECTED, FLAGGED_FOR_INSPECTION
+  verifiedAt       DateTime    @default(now())
+
+  @@map("verification_records")
+}
+
+model AdditionalDocumentRequest {
+  id                 String      @id @default(uuid())
+  applicationId      String
+  application        Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  officerId          String
+  officer            Officer     @relation(fields: [officerId], references: [id])
+  requestedDocuments String      // Comma-separated or JSON list of document names
+  remarks            String
+  requestDate        DateTime    @default(now())
+  status             String      @default("PENDING") // PENDING, FULFILLED
+  fulfilledAt        DateTime?
+  citizenResponse    String?
+
+  @@map("additional_document_requests")
+}
+
+model Certificate {
+  id                   String          @id @default(uuid())
+  registrationNumber   String          @unique
+  certificateNumber    String          @unique
+  applicationId        String          @unique
+  application          Application     @relation(fields: [applicationId], references: [id])
+  certificateType      String          // BIRTH, DEATH
+  issueDate            DateTime        @default(now())
+  issuingAuthority     String          @default("Department of Vital Statistics, Municipal Corporation")
+  registrarName        String          @default("Chief Registrar of Births and Deaths")
+  registrarDesignation String          @default("Municipal Commissioner & Executive Registrar")
+  pdfPath              String
+  qrCodeData           String
+  digitalSignatureHash String
+  valid                Boolean         @default(true)
+  createdAt            DateTime        @default(now())
+
+  digitalArchiveEntry  DigitalArchive?
+
+  @@map("certificates")
+}
+
+model DigitalArchive {
+  id                  String      @id @default(uuid())
+  certificateId       String      @unique
+  certificate         Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  registrationNumber  String      @unique
+  certificateType     String      // BIRTH, DEATH
+  subjectName         String
+  eventDate           DateTime
+  gender              String
+  placeOfEvent        String
+  parentOrSpouseName  String
+  archivedAt          DateTime    @default(now())
+  status              String      @default("ACTIVE") // ACTIVE, REVOKED, AMENDED
+
+  @@map("digital_archive")
+}
+
+model ApplicationStatusHistory {
+  id             String      @id @default(uuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  previousStatus String?
+  newStatus      String
+  changedById    String?
+  changedBy      User?       @relation(fields: [changedById], references: [id])
+  changeReason   String?
+  remarks        String?
+  createdAt      DateTime    @default(now())
+
+  @@map("application_status_history")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("APPLICATION_STATUS") // APPLICATION_STATUS, DOCUMENT_REQUEST, APPROVAL, REJECTION, SYSTEM
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // LOGIN, APPLICATION_SUBMIT, HOSPITAL_MATCH, OFFICER_VERIFY, APPROVE, REJECT, CERTIFICATE_GENERATED
+  entityType  String
+  entityId    String?
+  detailsJson String?
+  ipAddress   String?  @default("127.0.0.1")
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}

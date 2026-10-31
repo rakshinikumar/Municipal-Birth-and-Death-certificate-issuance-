@@ -1,0 +1,6 @@
+{
+  "name": "Municipal Birth & Death Certificate System",
+  "description": "Official municipal government portal for birth and death certificate issuance, hospital verification, digital archive, and QR validation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
